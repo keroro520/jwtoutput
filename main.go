@@ -2,9 +2,15 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
+	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/golang-jwt/jwt/v4"
 	"math/big"
+	"time"
 
-	"github.com/ethereum-optimism/optimism/opnode"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -12,19 +18,44 @@ import (
 // TODO --target-number
 // TODO --reorg-step
 
+func JWTAuthToken(jwtSecret []byte) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"iat": &jwt.NumericDate{Time: time.Now()},
+	})
+	signedToken, err := token.SignedString(jwtSecret[:])
+	if err != nil {
+		return "", err
+	}
+
+	// Include the signed JWT as a Bearer token in the Authorization header
+	return fmt.Sprintf("Bearer %s", signedToken), nil
+}
+
 func main() {
-	// create a new OP-Node client
-	opNode, err := opnode.Dial("http://optimism-qanet-master-op-node.bk.nodereal.cc")
+	ethRpcUrlFlag := flag.String("eth-rpc-url", "http://127.0.0.1:8545", "ETH RPC URL")
+	engineRpcUrlFlag := flag.String("engine-rpc-url", "http://127.0.0.1:8551", "Engine RPC URL")
+	jwtSecretFlag := flag.String("jwt-secret", "", "JWT secret")
+	flag.Parse()
+
+	fmt.Printf("eth-rpc-url: %s", *ethRpcUrlFlag)
+	fmt.Println()
+	fmt.Printf("engine-rpc-url: %s", *engineRpcUrlFlag)
+	fmt.Println()
+	fmt.Printf("jwt-secret: %s", *jwtSecretFlag)
+	fmt.Println()
+
+	rpcClient, err := rpc.DialContext(context.Background(), *ethRpcUrlFlag)
 	if err != nil {
 		panic(err)
 	}
 
-	conn, err := ethclient.Dial("https://optimism-qanet-master.bk.nodereal.cc")
+	ethClient := ethclient.NewClient(rpcClient)
+
+	latestNumber, err := ethClient.BlockNumber(context.Background())
 	if err != nil {
 		panic(err)
 	}
-
-	latestNumber, err := conn.BlockNumber(context.Background())
+	latestHeader, err := ethClient.HeaderByNumber(context.Background(), big.NewInt(int64(latestNumber)))
 	if err != nil {
 		panic(err)
 	}
@@ -32,18 +63,50 @@ func main() {
 	targetNumber := latestNumber - 10
 	// reorgStep := uint64(2)
 
-	targetBlock, err := conn.BlockByNumber(context.Background(), big.NewInt(targetNumber))
+	targetHeader, err := ethClient.HeaderByNumber(context.Background(), big.NewInt(int64(targetNumber)))
 	if err != nil {
 		panic(err)
 	}
 
-	c.ForkchoiceUpdate()
+	engineRpc, err := rpc.DialContext(context.Background(), *engineRpcUrlFlag)
+	if err != nil {
+		panic(err)
+	}
 
-	// for blockNumber := uint64(1208728); blockNumber > 0; blockNumber -= 1 {
-	// for blockNumber := uint64(1208728); blockNumber > 0; blockNumber += 100 {
-	//for blockNumber := uint64(1209128); blockNumber > 0; blockNumber += 1 {
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//}
+	jwtSecret := common.FromHex(*jwtSecretFlag)
+	jwtToken, err := JWTAuthToken(jwtSecret)
+	if err != nil {
+		panic(err)
+	}
+
+	var result eth.ForkchoiceUpdatedResult
+	var fc = eth.ForkchoiceState{
+		FinalizedBlockHash: targetHeader.Hash(),
+		SafeBlockHash:      targetHeader.Hash(),
+		HeadBlockHash:      targetHeader.Hash(),
+	}
+
+	engineRpc.SetHeader("Authorization", jwtToken)
+	err = engineRpc.CallContext(context.Background(), &result, "engine_forkchoiceUpdatedV1", fc /*, attributes*/)
+	if err != nil {
+		// fmt.Printf("engine_forkchoiceUpdatedV1 error, %s", err)
+		panic(err)
+	}
+
+	fmt.Printf("%+v", result)
+	fmt.Println()
+
+	fmt.Println("===== Before =====")
+	fmt.Println("Before: ", latestHeader.Number, latestHeader.Hash())
+	newLatestNumber, err := ethClient.BlockNumber(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	newLatestHeader, err := ethClient.HeaderByNumber(context.Background(), big.NewInt(int64(newLatestNumber)))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("After:  ", newLatestHeader.Number, newLatestHeader.Hash())
+
+	fmt.Println("Target: ", targetHeader.Number, targetHeader.Hash())
 }
