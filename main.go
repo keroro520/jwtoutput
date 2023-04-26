@@ -60,7 +60,7 @@ func main() {
 		panic(err)
 	}
 
-	targetNumber := latestNumber - 10
+	targetNumber := latestNumber - 1
 	// reorgStep := uint64(2)
 
 	targetHeader, err := ethClient.HeaderByNumber(context.Background(), big.NewInt(int64(targetNumber)))
@@ -81,13 +81,22 @@ func main() {
 
 	var result eth.ForkchoiceUpdatedResult
 	var fc = eth.ForkchoiceState{
-		FinalizedBlockHash: targetHeader.Hash(),
+		FinalizedBlockHash: common.Hash{},
 		SafeBlockHash:      targetHeader.Hash(),
 		HeadBlockHash:      targetHeader.Hash(),
 	}
 
 	engineRpc.SetHeader("Authorization", jwtToken)
-	err = engineRpc.CallContext(context.Background(), &result, "engine_forkchoiceUpdatedV1", fc /*, attributes*/)
+
+	var attributes = eth.PayloadAttributes{
+		Timestamp:             eth.Uint64Quantity(targetHeader.Time + 1),
+		PrevRandao:            eth.Bytes32{0x1},
+		SuggestedFeeRecipient: common.Address{},
+		Transactions:          nil,
+		NoTxPool:              false,
+		GasLimit:              (*eth.Uint64Quantity)(&targetHeader.GasLimit),
+	}
+	err = engineRpc.CallContext(context.Background(), &result, "engine_forkchoiceUpdatedV1", fc, attributes)
 	if err != nil {
 		// fmt.Printf("engine_forkchoiceUpdatedV1 error, %s", err)
 		panic(err)
@@ -96,6 +105,8 @@ func main() {
 	fmt.Printf("%+v", result)
 	fmt.Println()
 
+	fmt.Printf("fc: %+v", fc)
+	fmt.Println()
 	fmt.Println("===== Before =====")
 	fmt.Println("Before: ", latestHeader.Number, latestHeader.Hash())
 	newLatestNumber, err := ethClient.BlockNumber(context.Background())
