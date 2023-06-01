@@ -1,5 +1,4 @@
 
-
 ### Install
 
 ```shell
@@ -7,28 +6,20 @@ go install github.com/keroro520/jwtoutput
 ```
 
 
-## Usage
+### Usage
 
+```shell
+jwtoutput --jwt-secret <JWT SECRET>
+```
 
 ### Example
 
 ```
-export JWT_SECRET=<...>
-kubectl exec \
-    -it \
-    --namespace=bsc-qa-l2-opt-qanet-ha \
-    qanet-ha-optimism-bedrock-bridge-l2-1 \
-    -- time curl http://127.0.0.1:8551 \
-          -X POST \
-          --data '{
-                "jsonrpc":"2.0",
-                "method":"engine_forkchoiceUpdatedV1",
-                "params":[{
-                    "head_block_hash": "0x1000000000000000000000000000000000000000000000000000000000000000",
-                    "safe_block_hash": "0x1000000000000000000000000000000000000000000000000000000000000000",
-                    "finalized_block_hash": "0x1000000000000000000000000000000000000000000000000000000000000000"}],
-                "id":74
-                }' \
-          -H 'Content-Type: application/json' \
-          -H "$(jwtoutput --jwt-secret $JWT_SECRET)"
+jwtoutput --jwt-secret 0xd4ec946d0c4ebad0fee0ea4af459af1cd44f4dee98dc11bc32c920ff83efa9b0
+```
+
+Output
+
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2ODU2MDkwMzd9.8Nln3ZECoHH1or5rAP08WLB42xWp6IxkEuF0nYqX5-M
 ```
